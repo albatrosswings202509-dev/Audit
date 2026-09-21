@@ -1,2 +1,817 @@
-# Audit
-Audit
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GP ↔ GENEX Audit Dashboard</title>
+<style>
+  :root{
+    --bg:#0d1117;
+    --bg-panel:#151b23;
+    --bg-panel-raised:#1b222c;
+    --line:#2a323d;
+    --line-soft:#212832;
+    --text:#e6e9ee;
+    --muted:#8b93a1;
+    --muted-dim:#5c6472;
+    --gp-blue:#3b82c4;
+    --gp-blue-dim:#274a63;
+    --genex-orange:#e08a3c;
+    --genex-orange-dim:#5c4326;
+    --good:#4caf7d;
+    --bad:#dd5f5f;
+    --warn:#e0b23c;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono: 'IBM Plex Mono', 'SF Mono', ui-monospace, monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    font-size:14px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:var(--gp-blue); color:#fff;}
+  a{color:inherit;}
+
+  /* ---------- Top bar ---------- */
+  .topbar{
+    background:var(--bg-panel);
+    border-bottom:1px solid var(--line);
+    padding:16px 26px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:12px;
+    position:sticky;
+    top:0;
+    z-index:50;
+  }
+  .brand{display:flex; align-items:center; gap:12px;}
+  .brand .mark{
+    width:34px; height:34px;
+    border-radius:8px;
+    background:linear-gradient(135deg, var(--gp-blue) 0%, var(--genex-orange) 100%);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:700;
+    font-size:13px;
+    color:#0d1117;
+    flex-shrink:0;
+  }
+  .brand h1{font-size:16px; font-weight:600; margin:0; letter-spacing:0.01em;}
+  .brand .sub{font-size:11.5px; color:var(--muted); font-family:var(--mono);}
+
+  .status-cluster{display:flex; align-items:center; gap:14px; font-size:12px; color:var(--muted);}
+  .live-dot{width:7px; height:7px; border-radius:50%; background:var(--good); display:inline-block; margin-right:6px; animation:pulse 2.4s ease-in-out infinite;}
+  .live-dot.stale{background:var(--warn); animation:none;}
+  @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:0.35;}}
+  #refreshBtn{
+    background:var(--gp-blue);
+    color:#fff;
+    border:none;
+    padding:7px 14px;
+    font-size:12px;
+    font-family:var(--sans);
+    font-weight:600;
+    border-radius:5px;
+    cursor:pointer;
+  }
+  #refreshBtn:hover{background:#2f6ba3;}
+  #refreshBtn:disabled{opacity:0.5; cursor:default;}
+  #exportBtn{
+    background:transparent;
+    color:var(--text);
+    border:1px solid var(--line);
+    padding:7px 14px;
+    font-size:12px;
+    font-family:var(--sans);
+    font-weight:600;
+    border-radius:5px;
+    cursor:pointer;
+  }
+  #exportBtn:hover{border-color:var(--muted);}
+
+  .setup-banner{
+    background:#3a2c10;
+    border-bottom:1px solid #6b501c;
+    color:#f0d99a;
+    padding:11px 26px;
+    font-size:12.5px;
+    display:none;
+  }
+  .setup-banner.show{display:block;}
+  .setup-banner code{background:#00000033; border:1px solid #6b501c; padding:1px 5px; border-radius:3px; font-family:var(--mono);}
+
+  /* ---------- Filter bar ---------- */
+  .filterbar{
+    background:var(--bg-panel);
+    border-bottom:1px solid var(--line);
+    padding:14px 26px;
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  .filterbar .fgroup{display:flex; flex-direction:column; gap:4px;}
+  .filterbar label{font-size:10.5px; color:var(--muted-dim); text-transform:none;}
+  .filterbar select, .filterbar input[type=text]{
+    background:var(--bg-panel-raised);
+    color:var(--text);
+    border:1px solid var(--line);
+    border-radius:5px;
+    padding:7px 10px;
+    font-family:var(--sans);
+    font-size:12.5px;
+    min-width:130px;
+  }
+  .filterbar select:focus, .filterbar input:focus{outline:1px solid var(--gp-blue);}
+  #clearFiltersBtn{
+    background:none;
+    border:1px solid var(--line);
+    color:var(--muted);
+    border-radius:5px;
+    padding:7px 12px;
+    font-size:12px;
+    cursor:pointer;
+    align-self:flex-end;
+  }
+  #clearFiltersBtn:hover{color:var(--text); border-color:var(--muted);}
+  .filter-count{
+    font-size:11.5px;
+    color:var(--muted-dim);
+    font-family:var(--mono);
+    align-self:flex-end;
+    margin-left:auto;
+    padding-bottom:8px;
+  }
+
+  main{padding:24px 26px 60px; max-width:1500px; margin:0 auto;}
+
+  section{margin-bottom:32px;}
+  .section-head{
+    display:flex; align-items:baseline; justify-content:space-between;
+    margin-bottom:14px; flex-wrap:wrap; gap:8px;
+  }
+  .section-head h2{font-size:15px; font-weight:600; margin:0; display:flex; align-items:center; gap:8px;}
+  .section-head .hint{font-size:11.5px; color:var(--muted-dim); font-family:var(--mono);}
+
+  /* ---------- KPI ---------- */
+  .kpi-row{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(160px,1fr));
+    gap:12px;
+    margin-bottom:28px;
+  }
+  .kpi{
+    background:var(--bg-panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:16px 18px;
+  }
+  .kpi .label{font-size:11px; color:var(--muted); margin-bottom:8px; display:flex; align-items:center; gap:6px;}
+  .kpi .value{font-family:var(--mono); font-size:25px; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:-0.02em;}
+  .kpi .value.good{color:var(--good);}
+  .kpi .value.bad{color:var(--bad);}
+  .kpi .sub-label{font-size:11px; color:var(--muted-dim); margin-top:4px;}
+
+  /* ---------- Head to head ---------- */
+  .h2h-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  @media (max-width:820px){.h2h-grid{grid-template-columns:1fr;}}
+  .party-card{
+    background:var(--bg-panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:20px 22px;
+    position:relative;
+    overflow:hidden;
+  }
+  .party-card.gp{border-top:3px solid var(--gp-blue);}
+  .party-card.genex{border-top:3px solid var(--genex-orange);}
+  .party-card .party-title{
+    display:flex; align-items:center; gap:8px;
+    font-size:14px; font-weight:700; margin-bottom:4px;
+  }
+  .party-card .party-title .dot{width:10px; height:10px; border-radius:50%;}
+  .party-card.gp .dot{background:var(--gp-blue);}
+  .party-card.genex .dot{background:var(--genex-orange);}
+  .party-card .party-sub{font-size:11.5px; color:var(--muted-dim); margin-bottom:16px;}
+  .party-metrics{display:grid; grid-template-columns:repeat(3,1fr); gap:14px;}
+  .party-metrics .pm{}
+  .party-metrics .pm .pv{font-family:var(--mono); font-size:20px; font-weight:600;}
+  .party-metrics .pm .pl{font-size:10.5px; color:var(--muted-dim); margin-top:2px;}
+
+  /* ---------- Grids ---------- */
+  .grid-2{display:grid; grid-template-columns:1fr 1fr; gap:22px;}
+  .grid-3{display:grid; grid-template-columns:repeat(3,1fr); gap:18px;}
+  @media (max-width:920px){.grid-2,.grid-3{grid-template-columns:1fr;}}
+
+  /* ---------- Bars ---------- */
+  .bar-block{background:var(--bg-panel); border:1px solid var(--line); border-radius:8px; padding:16px 18px;}
+  .bar-row{display:flex; align-items:center; gap:10px; padding:6px 0;}
+  .bar-label{width:140px; font-size:12px; flex-shrink:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--muted);}
+  .bar-track{flex:1; background:var(--line-soft); height:14px; border-radius:3px; position:relative; overflow:hidden;}
+  .bar-track.dual{display:flex;}
+  .bar-fill{height:100%; border-radius:3px;}
+  .bar-fill.gp{background:var(--gp-blue);}
+  .bar-fill.genex{background:var(--genex-orange);}
+  .bar-fill.good{background:var(--good);}
+  .bar-fill.bad{background:var(--bad);}
+  .bar-val{width:80px; text-align:right; font-family:var(--mono); font-size:11.5px; color:var(--muted); flex-shrink:0;}
+  .legend{display:flex; gap:16px; font-size:11.5px; color:var(--muted); margin-bottom:10px;}
+  .legend span{display:flex; align-items:center; gap:6px;}
+  .legend .sw{width:9px; height:9px; border-radius:2px;}
+  .legend .sw.gp{background:var(--gp-blue);}
+  .legend .sw.genex{background:var(--genex-orange);}
+
+  /* ---------- Tables ---------- */
+  table{width:100%; border-collapse:collapse; background:var(--bg-panel); font-size:12.5px;}
+  thead th{
+    text-align:left; font-size:10.5px; color:var(--muted); font-weight:600;
+    padding:9px 10px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg-panel);
+    text-transform:uppercase; letter-spacing:0.03em;
+  }
+  tbody td{padding:8px 10px; border-bottom:1px solid var(--line-soft); font-variant-numeric:tabular-nums; color:var(--text);}
+  tbody tr:hover{background:var(--bg-panel-raised);}
+  .table-wrap{max-height:420px; overflow-y:auto; border:1px solid var(--line); border-radius:8px;}
+  .num{text-align:right; font-family:var(--mono);}
+  .pill{display:inline-block; padding:2px 8px; border-radius:4px; font-size:10.5px; font-weight:700;}
+  .pill.pass{background:#173325; color:var(--good);}
+  .pill.fail{background:#3a1e1e; color:var(--bad);}
+  .pill.gp{background:var(--gp-blue-dim); color:#8fc1e8;}
+  .pill.genex{background:var(--genex-orange-dim); color:#f0b877;}
+
+  .empty-note{padding:40px; text-align:center; color:var(--muted-dim); font-size:13px;}
+
+  footer{text-align:center; padding:24px; font-size:11px; color:var(--muted-dim); font-family:var(--mono);}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="mark">QA</div>
+    <div>
+      <h1>GP ↔ GENEX Audit Dashboard</h1>
+      <div class="sub">Quality Assurance · Live from Google Sheet</div>
+    </div>
+  </div>
+  <div class="status-cluster">
+    <span><span class="live-dot" id="liveDot"></span><span id="statusText">Connecting…</span></span>
+    <button id="exportBtn" onclick="exportCSV()">Export CSV</button>
+    <button id="refreshBtn" onclick="loadData(true)">Refresh now</button>
+  </div>
+</div>
+
+<div class="setup-banner" id="setupBanner">
+  One more step: open <code>dashboard_v2.html</code> in a text editor and replace <code>PASTE_YOUR_APPS_SCRIPT_URL_HERE</code>
+  with your Apps Script Web app URL. Until then this shows sample data from your sheet.
+</div>
+
+<div class="filterbar">
+  <div class="fgroup">
+    <label>Month</label>
+    <select id="fMonth" onchange="applyFilters()"><option value="">All Months</option></select>
+  </div>
+  <div class="fgroup">
+    <label>Party</label>
+    <select id="fParty" onchange="applyFilters()">
+      <option value="">GP & GENEX</option>
+      <option value="GP">GP Only</option>
+      <option value="Genex">GENEX Only</option>
+    </select>
+  </div>
+  <div class="fgroup">
+    <label>Skill / LOB</label>
+    <select id="fSkill" onchange="applyFilters()"><option value="">All Skills</option></select>
+  </div>
+  <div class="fgroup">
+    <label>Team Leader</label>
+    <select id="fTL" onchange="applyFilters()"><option value="">All Team Leaders</option></select>
+  </div>
+  <div class="fgroup">
+    <label>Result</label>
+    <select id="fResult" onchange="applyFilters()">
+      <option value="">Pass & Fail</option>
+      <option value="Pass">Pass</option>
+      <option value="Fail">Fail</option>
+    </select>
+  </div>
+  <div class="fgroup">
+    <label>Tenure</label>
+    <select id="fTenure" onchange="applyFilters()"><option value="">All Tenures</option></select>
+  </div>
+  <button id="clearFiltersBtn" onclick="clearFilters()">✕ Clear</button>
+  <div class="filter-count" id="filterCount"></div>
+</div>
+
+<main>
+
+  <section>
+    <div class="section-head"><h2>📊 Key Audit Metrics</h2><span class="hint">reflects active filters</span></div>
+    <div class="kpi-row" id="kpiOverview"></div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>🏦 GP vs GENEX Head-to-Head</h2></div>
+    <div class="h2h-grid">
+      <div class="party-card gp">
+        <div class="party-title"><span class="dot"></span>GP — GrameenPhone</div>
+        <div class="party-sub" id="gpSub">—</div>
+        <div class="party-metrics" id="gpMetrics"></div>
+      </div>
+      <div class="party-card genex">
+        <div class="party-title"><span class="dot"></span>GENEX — Genex Infosys</div>
+        <div class="party-sub" id="genexSub">—</div>
+        <div class="party-metrics" id="genexMetrics"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="grid-2">
+    <section>
+      <div class="section-head"><h2>📈 Pass Rate by Skill — GP vs GENEX</h2></div>
+      <div class="bar-block">
+        <div class="legend"><span><span class="sw gp"></span>GP</span><span><span class="sw genex"></span>GENEX</span></div>
+        <div id="skillPartyBars"></div>
+      </div>
+    </section>
+    <section>
+      <div class="section-head"><h2>🏢 Volume by Site</h2></div>
+      <div class="bar-block" id="siteBreakdown"></div>
+    </section>
+  </div>
+
+  <div class="grid-2">
+    <section>
+      <div class="section-head"><h2>👤 Pass Rate by Team Leader</h2></div>
+      <div class="bar-block" id="tlRank"></div>
+    </section>
+    <section>
+      <div class="section-head"><h2>⏱️ Tenure-Wise Contribution</h2></div>
+      <div class="bar-block" id="tenureBreakdown"></div>
+    </section>
+  </div>
+
+  <section>
+    <div class="section-head">
+      <h2>⚠️ Top Failure Reasons</h2>
+      <span class="hint">from error remarks / audit comments</span>
+    </div>
+    <div class="bar-block" id="failReasons"></div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>🏆 Agent Leaderboards</h2></div>
+    <div class="grid-2">
+      <div>
+        <div class="section-head"><h2 style="font-size:13px">⚠️ Top CE Offenders</h2></div>
+        <div class="table-wrap"><table><thead><tr><th>Agent</th><th>Party</th><th class="num">CE Fails</th><th class="num">Audits</th></tr></thead><tbody id="ceOffenders"></tbody></table></div>
+      </div>
+      <div>
+        <div class="section-head"><h2 style="font-size:13px">🏅 Top Scorers</h2></div>
+        <div class="table-wrap"><table><thead><tr><th>Agent</th><th>Party</th><th class="num">Avg Score</th><th class="num">Audits</th></tr></thead><tbody id="topScorers"></tbody></table></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>📋 Audit Log</h2>
+      <span class="hint">most recent first, capped at 150 rows for performance</span>
+    </div>
+    <div class="fgroup" style="margin-bottom:12px; max-width:320px;">
+      <input type="text" id="logSearch" placeholder="Search agent, QA, comment…" oninput="renderAuditLog()">
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Eval date</th><th>Agent</th><th>Team Leader</th><th>QA</th><th>Party</th><th>Skill</th>
+          <th class="num">Score</th><th>Result</th><th>Critical</th><th>RTC</th>
+        </tr></thead>
+        <tbody id="auditLogTable"></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<footer id="footerNote">—</footer>
+
+<script>
+// =========================================================
+// CONFIG: paste your Apps Script Web App URL below.
+// =========================================================
+const API_URL = "PASTE_YOUR_APPS_SCRIPT_URL_HERE";
+const REFRESH_INTERVAL_MS = 30000;
+
+let ALL_RECORDS = [];
+let RECORDS = [];
+
+const num = (v) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+const pct = (n) => (n*100).toFixed(1) + '%';
+const isPass = (v) => String(v).trim().toLowerCase() === 'pass';
+
+function groupBy(arr, keyFn){
+  const m = new Map();
+  arr.forEach(r => { const k = keyFn(r); if(!m.has(k)) m.set(k, []); m.get(k).push(r); });
+  return m;
+}
+function passRate(rows, field){
+  if(rows.length === 0) return 0;
+  return rows.filter(r => isPass(r[field])).length / rows.length;
+}
+function avg(rows, field){
+  if(rows.length === 0) return 0;
+  const vals = rows.map(r => num(r[field])).filter(v => !isNaN(v));
+  return vals.length ? vals.reduce((a,b)=>a+b,0) / vals.length : 0;
+}
+function el(tag, attrs={}, html=''){
+  const e = document.createElement(tag);
+  Object.entries(attrs).forEach(([k,v]) => e.setAttribute(k,v));
+  e.innerHTML = html;
+  return e;
+}
+function uniqueSorted(arr, field){
+  return [...new Set(arr.map(r=>r[field]).filter(v => v && v !== '#N/A'))].sort();
+}
+
+// ---------- data loading ----------
+async function loadData(manual=false){
+  const btn = document.getElementById('refreshBtn');
+  const statusText = document.getElementById('statusText');
+  const liveDot = document.getElementById('liveDot');
+  if(manual){ btn.disabled = true; btn.textContent = 'Refreshing…'; }
+
+  if(!API_URL || API_URL.indexOf('PASTE_YOUR') === 0){
+    document.getElementById('setupBanner').classList.add('show');
+    ALL_RECORDS = await loadSampleData();
+    liveDot.classList.add('stale');
+    statusText.textContent = 'Sample data — connect your sheet (see banner)';
+    populateFilterOptions();
+    applyFilters();
+    if(manual){ btn.disabled = false; btn.textContent = 'Refresh now'; }
+    return;
+  }
+
+  try{
+    const res = await fetch(API_URL, {cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    ALL_RECORDS = json.records || [];
+    liveDot.classList.remove('stale');
+    const t = new Date(json.generatedAt || Date.now());
+    statusText.textContent = `Live · ${ALL_RECORDS.length} audits · updated ${t.toLocaleTimeString()}`;
+    populateFilterOptions();
+    applyFilters();
+  }catch(err){
+    liveDot.classList.add('stale');
+    statusText.textContent = 'Connection issue — showing last known data (' + err.message + ')';
+  }finally{
+    if(manual){ btn.disabled = false; btn.textContent = 'Refresh now'; }
+  }
+}
+
+async function loadSampleData(){
+  try{
+    const res = await fetch('sample_data.json', {cache:'no-store'});
+    const json = await res.json();
+    return json.records || [];
+  }catch(e){ return []; }
+}
+
+// ---------- filters ----------
+function populateFilterOptions(){
+  const fillSelect = (id, values, preserveFirst=true) => {
+    const sel = document.getElementById(id);
+    const current = sel.value;
+    const firstOpt = preserveFirst ? sel.options[0].outerHTML : '';
+    sel.innerHTML = firstOpt + values.map(v => `<option value="${v}">${v}</option>`).join('');
+    if(values.includes(current)) sel.value = current;
+  };
+  fillSelect('fMonth', uniqueSorted(ALL_RECORDS, 'Month'));
+  fillSelect('fSkill', uniqueSorted(ALL_RECORDS, 'Skill'));
+  fillSelect('fTL', uniqueSorted(ALL_RECORDS, 'Team Leader'));
+  fillSelect('fTenure', uniqueSorted(ALL_RECORDS, 'Tenure'));
+}
+
+function clearFilters(){
+  ['fMonth','fParty','fSkill','fTL','fResult','fTenure'].forEach(id => document.getElementById(id).value = '');
+  applyFilters();
+}
+
+function applyFilters(){
+  const month = document.getElementById('fMonth').value;
+  const party = document.getElementById('fParty').value;
+  const skill = document.getElementById('fSkill').value;
+  const tl = document.getElementById('fTL').value;
+  const result = document.getElementById('fResult').value;
+  const tenure = document.getElementById('fTenure').value;
+
+  RECORDS = ALL_RECORDS.filter(r => {
+    if(month && r['Month'] !== month) return false;
+    if(party && r['Audit Party'] !== party) return false;
+    if(skill && r['Skill'] !== skill) return false;
+    if(tl && r['Team Leader'] !== tl) return false;
+    if(result && r['Pass or Fail'] !== result) return false;
+    if(tenure && r['Tenure'] !== tenure) return false;
+    return true;
+  });
+
+  document.getElementById('filterCount').textContent = `${RECORDS.length.toLocaleString()} of ${ALL_RECORDS.length.toLocaleString()} audits`;
+  renderAll();
+}
+
+// ---------- render orchestration ----------
+function renderAll(){
+  if(RECORDS.length === 0){
+    document.getElementById('footerNote').textContent = 'No records match the current filters.';
+  } else {
+    document.getElementById('footerNote').textContent =
+      `${RECORDS.length} audit records shown · auto-refreshing every ${REFRESH_INTERVAL_MS/1000}s`;
+  }
+  renderKPIs();
+  renderHeadToHead();
+  renderSkillPartyBars();
+  renderSiteBreakdown();
+  renderTLRank();
+  renderTenureBreakdown();
+  renderFailReasons();
+  renderLeaderboards();
+  renderAuditLog();
+}
+
+function kpi(container, label, value, cls='', sub=''){
+  container.appendChild(el('div', {class:'kpi'},
+    `<div class="label">${label}</div><div class="value ${cls}">${value}</div>${sub ? `<div class="sub-label">${sub}</div>` : ''}`));
+}
+
+// ============ KPIs ============
+function renderKPIs(){
+  const box = document.getElementById('kpiOverview');
+  box.innerHTML = '';
+  const total = RECORDS.length;
+  const gp = RECORDS.filter(r => r['Audit Party'] === 'GP');
+  const genex = RECORDS.filter(r => r['Audit Party'] === 'Genex');
+  const rr = passRate(RECORDS, 'RTC');
+
+  kpi(box, '📋 Total Audits', total.toLocaleString(), '', 'in current filter');
+  const gpCE = passRate(gp, 'Critical Error');
+  kpi(box, '✅ GP CE%', pct(gpCE), gpCE>=0.9?'good':(gpCE<0.75?'bad':''), 'GP overall CE score');
+  const genexCE = passRate(genex, 'Critical Error');
+  kpi(box, '🏢 GENEX CE%', pct(genexCE), genexCE>=0.9?'good':(genexCE<0.75?'bad':''), 'GENEX overall CE score');
+  kpi(box, '📊 Overall Pass Rate', pct(passRate(RECORDS,'Pass or Fail')), '', `${RECORDS.filter(r=>isPass(r['Pass or Fail'])).length} passed`);
+  kpi(box, '🔄 RTC Rate', pct(rr), rr>=0.85?'good':(rr<0.7?'bad':''), 'Combined resolution rate');
+}
+
+// ============ Head to head ============
+function renderHeadToHead(){
+  const gp = RECORDS.filter(r => r['Audit Party'] === 'GP');
+  const genex = RECORDS.filter(r => r['Audit Party'] === 'Genex');
+
+  document.getElementById('gpSub').textContent = `${gp.length.toLocaleString()} of ${RECORDS.length.toLocaleString()} audits`;
+  document.getElementById('genexSub').textContent = `${genex.length.toLocaleString()} of ${RECORDS.length.toLocaleString()} audits`;
+
+  const buildMetrics = (rows) => {
+    const pass = rows.filter(r=>isPass(r['Pass or Fail'])).length;
+    const fail = rows.length - pass;
+    return `
+      <div class="pm"><div class="pv">${rows.length}</div><div class="pl">Audits</div></div>
+      <div class="pm"><div class="pv">${pct(passRate(rows,'Critical Error'))}</div><div class="pl">CE%</div></div>
+      <div class="pm"><div class="pv">${avg(rows,'Evaluation Score').toFixed(1)}</div><div class="pl">Avg Score</div></div>
+      <div class="pm"><div class="pv" style="color:var(--good)">${pass}</div><div class="pl">Pass</div></div>
+      <div class="pm"><div class="pv" style="color:var(--bad)">${fail}</div><div class="pl">Fail</div></div>
+      <div class="pm"><div class="pv">${pct(passRate(rows,'RTC'))}</div><div class="pl">RTC%</div></div>
+    `;
+  };
+  document.getElementById('gpMetrics').innerHTML = buildMetrics(gp);
+  document.getElementById('genexMetrics').innerHTML = buildMetrics(genex);
+}
+
+// ============ Skill x Party bars ============
+function renderSkillPartyBars(){
+  const box = document.getElementById('skillPartyBars');
+  box.innerHTML = '';
+  const bySkill = groupBy(RECORDS, r => r['Skill'] || 'Unknown');
+  const skills = [...bySkill.entries()].filter(([sk])=>sk && sk!=='#N/A' && sk!=='Unknown').sort((a,b)=>b[1].length-a[1].length);
+
+  if(skills.length === 0){ box.appendChild(el('div',{class:'empty-note'},'No data for current filters.')); return; }
+
+  skills.forEach(([skill, rows]) => {
+    const gpRows = rows.filter(r=>r['Audit Party']==='GP');
+    const genexRows = rows.filter(r=>r['Audit Party']==='Genex');
+    const gpPR = passRate(gpRows, 'Pass or Fail');
+    const genexPR = passRate(genexRows, 'Pass or Fail');
+
+    const wrap = el('div', {style:'margin-bottom:10px;'});
+    wrap.appendChild(el('div', {style:'font-size:12px; color:var(--muted); margin-bottom:4px;'}, skill));
+
+    const gpRow = el('div', {class:'bar-row'});
+    gpRow.appendChild(el('div',{class:'bar-label'}, 'GP'));
+    const gpTrack = el('div',{class:'bar-track'});
+    gpTrack.appendChild(el('div',{class:'bar-fill gp', style:`width:${gpRows.length?Math.max(2,gpPR*100):0}%`}));
+    gpRow.appendChild(gpTrack);
+    gpRow.appendChild(el('div',{class:'bar-val'}, gpRows.length ? pct(gpPR) + ` (${gpRows.length})` : '—'));
+    wrap.appendChild(gpRow);
+
+    const genexRow = el('div', {class:'bar-row'});
+    genexRow.appendChild(el('div',{class:'bar-label'}, 'GENEX'));
+    const genexTrack = el('div',{class:'bar-track'});
+    genexTrack.appendChild(el('div',{class:'bar-fill genex', style:`width:${genexRows.length?Math.max(2,genexPR*100):0}%`}));
+    genexRow.appendChild(genexTrack);
+    genexRow.appendChild(el('div',{class:'bar-val'}, genexRows.length ? pct(genexPR) + ` (${genexRows.length})` : '—'));
+    wrap.appendChild(genexRow);
+
+    box.appendChild(wrap);
+  });
+}
+
+// ============ Site breakdown ============
+function renderSiteBreakdown(){
+  const box = document.getElementById('siteBreakdown');
+  box.innerHTML = '';
+  const bySite = groupBy(RECORDS, r => r['Site'] || 'Unknown');
+  const entries = [...bySite.entries()].filter(([s])=>s && s!=='#N/A').sort((a,b)=>b[1].length-a[1].length);
+  if(entries.length === 0){ box.appendChild(el('div',{class:'empty-note'},'No data.')); return; }
+  const max = Math.max(...entries.map(([,rows])=>rows.length));
+  entries.forEach(([site, rows]) => {
+    const row = el('div',{class:'bar-row'});
+    row.appendChild(el('div',{class:'bar-label'}, site));
+    const track = el('div',{class:'bar-track'});
+    track.appendChild(el('div',{class:'bar-fill good', style:`width:${Math.max(2,(rows.length/max)*100)}%`}));
+    row.appendChild(track);
+    row.appendChild(el('div',{class:'bar-val'}, rows.length + ' · ' + pct(passRate(rows,'Pass or Fail'))));
+    box.appendChild(row);
+  });
+}
+
+// ============ Team leader rank ============
+function renderTLRank(){
+  const box = document.getElementById('tlRank');
+  box.innerHTML = '';
+  const byTL = groupBy(RECORDS, r => r['Team Leader'] || 'Unknown');
+  const entries = [...byTL.entries()]
+    .filter(([tl])=>tl && tl!=='Unknown')
+    .map(([tl,rows])=>({tl, pr:passRate(rows,'Pass or Fail'), n:rows.length}))
+    .sort((a,b)=>a.pr-b.pr);
+  if(entries.length === 0){ box.appendChild(el('div',{class:'empty-note'},'No data.')); return; }
+  entries.forEach(x => {
+    const row = el('div',{class:'bar-row'});
+    row.appendChild(el('div',{class:'bar-label', title:x.tl}, x.tl));
+    const track = el('div',{class:'bar-track'});
+    track.appendChild(el('div',{class:`bar-fill ${x.pr<0.75?'bad':'good'}`, style:`width:${Math.max(2,x.pr*100)}%`}));
+    row.appendChild(track);
+    row.appendChild(el('div',{class:'bar-val'}, pct(x.pr) + ` (${x.n})`));
+    box.appendChild(row);
+  });
+}
+
+// ============ Tenure breakdown ============
+function renderTenureBreakdown(){
+  const box = document.getElementById('tenureBreakdown');
+  box.innerHTML = '';
+  const order = ['0 to 30Days','0 to 30 Days','31 to 60 Days','61 to 90 Days','91 to 120 Days','121 to 365 Days','365+ Days'];
+  const byTenure = groupBy(RECORDS, r => r['Tenure'] || 'Unknown');
+  const entries = [...byTenure.entries()].filter(([t])=>t && t!=='#N/A' && t!=='Unknown');
+  entries.sort((a,b)=>{
+    const ia = order.indexOf(a[0]); const ib = order.indexOf(b[0]);
+    return (ia===-1?99:ia) - (ib===-1?99:ib);
+  });
+  if(entries.length === 0){ box.appendChild(el('div',{class:'empty-note'},'No data.')); return; }
+  const max = Math.max(...entries.map(([,rows])=>rows.length));
+  entries.forEach(([tenure, rows]) => {
+    const row = el('div',{class:'bar-row'});
+    row.appendChild(el('div',{class:'bar-label'}, tenure));
+    const track = el('div',{class:'bar-track'});
+    track.appendChild(el('div',{class:'bar-fill gp', style:`width:${Math.max(2,(rows.length/max)*100)}%`}));
+    row.appendChild(track);
+    row.appendChild(el('div',{class:'bar-val'}, rows.length + ' · ' + pct(passRate(rows,'Pass or Fail'))));
+    box.appendChild(row);
+  });
+}
+
+// ============ Fail reasons ============
+function renderFailReasons(){
+  const box = document.getElementById('failReasons');
+  box.innerHTML = '';
+  const reasonCounts = new Map();
+  RECORDS.filter(r => !isPass(r['Pass or Fail'])).forEach(r => {
+    const reason = (r['Error Remarks'] || r['Audit Comments'] || '').split(',')[0].trim();
+    if(!reason) return;
+    const key = reason.length > 70 ? reason.slice(0,70)+'…' : reason;
+    reasonCounts.set(key, (reasonCounts.get(key)||0)+1);
+  });
+  const top = [...reasonCounts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8);
+  if(top.length === 0){ box.appendChild(el('div',{class:'empty-note'},'No failure remarks in current filter.')); return; }
+  const max = Math.max(...top.map(t=>t[1]));
+  top.forEach(([reason, count]) => {
+    const row = el('div',{class:'bar-row'});
+    row.appendChild(el('div',{class:'bar-label', style:'width:340px;', title:reason}, reason));
+    const track = el('div',{class:'bar-track'});
+    track.appendChild(el('div',{class:'bar-fill bad', style:`width:${Math.max(2,(count/max)*100)}%`}));
+    row.appendChild(track);
+    row.appendChild(el('div',{class:'bar-val'}, count));
+    box.appendChild(row);
+  });
+}
+
+// ============ Leaderboards ============
+function renderLeaderboards(){
+  const byAgent = groupBy(RECORDS, r => r['Agent Name'] || 'Unknown');
+  const agentStats = [...byAgent.entries()]
+    .filter(([a])=>a && a!=='Unknown')
+    .map(([agent, rows]) => ({
+      agent,
+      party: rows[0]['Audit Party'] || '',
+      n: rows.length,
+      ceFails: rows.filter(r=>!isPass(r['Critical Error'])).length,
+      avgScore: avg(rows, 'Evaluation Score')
+    }));
+
+  const ceBody = document.getElementById('ceOffenders');
+  ceBody.innerHTML = '';
+  agentStats.filter(a=>a.ceFails>0).sort((a,b)=>b.ceFails-a.ceFails).slice(0,10).forEach(a => {
+    ceBody.appendChild(el('tr',{}, `
+      <td>${a.agent}</td>
+      <td><span class="pill ${a.party==='GP'?'gp':'genex'}">${a.party}</span></td>
+      <td class="num">${a.ceFails}</td>
+      <td class="num">${a.n}</td>
+    `));
+  });
+  if(ceBody.children.length===0) ceBody.appendChild(el('tr',{},`<td colspan="4" class="empty-note">No CE failures in current filter.</td>`));
+
+  const scoreBody = document.getElementById('topScorers');
+  scoreBody.innerHTML = '';
+  agentStats.filter(a=>a.n>=2).sort((a,b)=>b.avgScore-a.avgScore).slice(0,10).forEach(a => {
+    scoreBody.appendChild(el('tr',{}, `
+      <td>${a.agent}</td>
+      <td><span class="pill ${a.party==='GP'?'gp':'genex'}">${a.party}</span></td>
+      <td class="num">${a.avgScore.toFixed(1)}</td>
+      <td class="num">${a.n}</td>
+    `));
+  });
+  if(scoreBody.children.length===0) scoreBody.appendChild(el('tr',{},`<td colspan="4" class="empty-note">No data.</td>`));
+}
+
+// ============ Audit log ============
+function renderAuditLog(){
+  const search = (document.getElementById('logSearch').value || '').toLowerCase();
+  const tbody = document.getElementById('auditLogTable');
+  tbody.innerHTML = '';
+  const sorted = [...RECORDS].sort((a,b) => {
+    const da = (a['Eval Date']||'').split('-').reverse().join('-');
+    const db = (b['Eval Date']||'').split('-').reverse().join('-');
+    return db.localeCompare(da);
+  });
+  let shown = 0;
+  for(const r of sorted){
+    if(shown >= 150) break;
+    const hay = `${r['Agent Name']} ${r['QA']} ${r['Team Leader']} ${r['Audit Comments']} ${r['Error Remarks']}`.toLowerCase();
+    if(search && !hay.includes(search)) continue;
+    const pass = isPass(r['Pass or Fail']);
+    const party = r['Audit Party'] || '';
+    tbody.appendChild(el('tr', {}, `
+      <td>${r['Eval Date']||''}</td>
+      <td>${r['Agent Name']||''}</td>
+      <td>${r['Team Leader']||''}</td>
+      <td>${r['QA']||''}</td>
+      <td>${party ? `<span class="pill ${party==='GP'?'gp':'genex'}">${party}</span>` : ''}</td>
+      <td>${r['Skill']||''}</td>
+      <td class="num">${r['Evaluation Score']||''}</td>
+      <td><span class="pill ${pass?'pass':'fail'}">${r['Pass or Fail']||''}</span></td>
+      <td>${r['Critical Error']||''}</td>
+      <td>${r['RTC']||''}</td>
+    `));
+    shown++;
+  }
+  if(shown === 0){
+    tbody.appendChild(el('tr',{}, `<td colspan="10" class="empty-note">No matching audits.</td>`));
+  }
+}
+
+// ============ CSV export ============
+function exportCSV(){
+  if(RECORDS.length === 0) return;
+  const cols = ['Eval Date','Agent Name','Team Leader','QA','Audit Party','Skill','Evaluation Score','Pass or Fail','Critical Error','RTC','Tenure','Site'];
+  const lines = [cols.join(',')];
+  RECORDS.forEach(r => {
+    lines.push(cols.map(c => `"${String(r[c]||'').replace(/"/g,'""')}"`).join(','));
+  });
+  const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `audit_export_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ---------- boot ----------
+loadData();
+setInterval(() => loadData(false), REFRESH_INTERVAL_MS);
+</script>
+</body>
+</html>
